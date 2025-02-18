@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSV Data Graph & Table</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@1.0.0/dist/chartjs-plugin-zoom.min.js"></script>
+    
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f4f7fc;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            flex-direction: column;
+        }
+
+        .container {
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0px 0px 15px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 900px;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 28px;
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        input[type="file"] {
+            padding: 10px;
+            font-size: 16px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            margin-bottom: 20px;
+            cursor: pointer;
+        }
+
+        select {
+            padding: 10px;
+            font-size: 16px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            margin: 10px;
+            width: 150px;
+            cursor: pointer;
+        }
+
+        button {
+            padding: 12px 30px;
+            background-color: #4b9ece;
+            color: white;
+            font-size: 18px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: background-color 0.3s;
+        }
+
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        button:hover:not(:disabled) {
+            background-color: #43bcd1;
+        }
+
+        canvas {
+            margin-top: 30px;
+            border-radius: 8px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+            width: 90%;
+            max-width: 1200px;
+        }
+
+        #controls {
+            margin-bottom: 20px;
+        }
+
+        .form-control {
+            margin: 10px;
+        }
+
+        #zoom-controls {
+            margin-bottom: 20px;
+        }
+
+        .zoom-controls {
+            margin: 10px;
+        }
+
+        #table-view {
+            margin-top: 40px;
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        #table-view th, #table-view td {
+            padding: 10px;
+            border: 1px solid #ccc;
+            text-align: center;
+            width: 100%;
+        }
+
+        #table-view th {
+            background-color: #f4f7fc;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Upload CSV Files to View Graph and Table</h1>
+        <input type="file" id="csv-file" multiple />
+        
+        <div id="controls" style="display:none;">
+            <div class="form-control">
+                <select id="x-axis-column"></select>
+            </div>
+            <div class="form-control">
+                <select id="y-axis-column"></select>
+            </div>
+            <div class="form-control">
+                <select id="graph-type">
+                    <option value="line">Line</option>
+                    <option value="bar">Bar</option>
+                    <option value="area">Area</option>
+                    <option value="pie">Pie</option>
+                </select>
+            </div>
+        </div>
+    
+        <div id="operation-controls" style="display:none;">
+            <div class="form-control">
+                <select id="operation-type">
+                    <option value="sum">Sum</option>
+                    <option value="subtract">Subtract</option>
+                    <option value="multiply">Multiply</option>
+                    <option value="divide">Divide</option>
+                    <option value="average">Average</option>
+                    <option value="min">Minimum</option>
+                    <option value="max">Maximum</option>
+                </select>
+            </div>
+            <button id="apply-operation-btn" disabled>Apply Operation</button>
+        </div>
+
+        <button id="run-btn" disabled>Show Graph</button>
+        <button id="table-btn" disabled>Show Table</button>
+        <button id="hide-table-btn" style="display:none;">Hide table</button>
+        <button id="save-btn" style="display:none;">Save Graph as Image</button>
+        
+        
+        <div id="zoom-controls">
+            <button id="zoom-in">Zoom In</button>
+            <button id="zoom-out">Zoom Out</button>
+            <button id="pan-left">←</button>
+            <button id="pan-right">→</button>
+          </div>
+          
+        <canvas id="myChart" width="400" height="200" style="display:none;"></canvas>
+        <table id="table-view" style="display:none;">
+            <thead></thead>
+            <tbody></tbody>
+        </table>
+    </div>
+    
+    <script>
+        $(document).ready(function () {
+            var chart; 
+            var allData = []; 
+            var columns = []; 
+            var combinedData = [];  
+    
+            $('#csv-file').on('change', function (e) {
+                var files = e.target.files;
+                allData = [];
+                combinedData = [];
+    
+              
+                Array.from(files).forEach(function(file) {
+                    var reader = new FileReader();
+                    reader.onload = function (event) {
+                        var csvData = event.target.result;
+                        var parsed = parseCSV(csvData);
+                        allData.push(parsed);
+                        combinedData = combinedData.concat(parsed);
+                        columns = Object.keys(parsed[0]);  
+                        
+                        populateColumnSelectors(columns);
+                  
+                        $('#controls').show();
+                        $('#operation-controls').show();
+                        $('#run-btn').prop('disabled', false);
+                        $('#table-btn').prop('disabled', false);
+                        $('#apply-operation-btn').prop('disabled', false);
+                    };
+                    reader.readAsText(file);
+                });
+            });
+    
+            function parseCSV(csv) {
+                var lines = csv.split('\n');
+                var result = [];
+                var headers = lines[0].split(',');
+    
+                for (var i = 1; i < lines.length; i++) {
+                    var obj = {};
+                    var currentLine = lines[i].split(',');
+    
+                    for (var j = 0; j < headers.length; j++) {
+                        obj[headers[j]] = currentLine[j];
+                    }
+    
+                    result.push(obj);
+                }
+    
+                return result;
+            }
+    
+            function populateColumnSelectors(columns) {
+                $('#x-axis-column').empty();
+                $('#y-axis-column').empty();
+    
+               
+                columns.forEach(function (col) {
+                    $('#x-axis-column').append(new Option(col, col));
+                    $('#y-axis-column').append(new Option(col, col));
+                });
+            }
+    
+         
+            
+            function updateGraph(data) {
+                var xColumn = $('#x-axis-column').val();
+                var yColumn = $('#y-axis-column').val();
+                var graphType = $('#graph-type').val();
+
+                var labels = data.map(function(row) { return row[xColumn]; });
+                var values = data.map(function(row) { return parseFloat(row[yColumn]) || 0; });
+
+               
+                
+                if (chart) {
+                    chart.destroy();
+                }
+
+                var ctx = $('#myChart')[0].getContext('2d');
+chart = new Chart(ctx, {
+    type: graphType, 
+    data: {
+        labels: labels,
+        datasets: [{
+            label: yColumn,
+            data: values,
+            backgroundColor: graphType === 'pie' ? 
+                'rgba(54, 162, 235, 0.8)' : 'rgba(54, 162, 235, 0.6)',
+            borderColor: 'rgba(95, 162, 235, 1)',
+            borderWidth: 1
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: {
+                position: 'top',
+            },
+        },
+        scales: {
+            x: {
+                // x-axis settings
+                beginAtZero: true
+            },
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    precision: 2
+                }
+            }
+        },
+        zoom: {
+            pan: {
+                enabled: true,
+                mode: 'x', 
+                speed: 5,
+                threshold: 8 
+            },
+            zoom: {
+                wheel: {
+                    enabled: true,  
+                    modifierKey: 'ctrl', 
+                    speed: 0.1,   
+                    axis: 'x' 
+                },
+                pinch: {
+                    enabled: true, 
+                    mode: 'x' 
+                }
+            }
+        }
+    }
+});
+
+
+$('#zoom-in').on('click', function() {
+    chart.zoom(1.1); 
+});
+$('#zoom-out').on('click', function() {
+    chart.zoom(0.8); 
+});
+$('#pan-left').on('click', function() {
+    chart.pan({ x: -50 });
+});
+$('#pan-right').on('click', function() {
+    chart.pan({ x: 50 }); 
+});
+
+
+                $('#myChart').show();
+                $('#table-view').hide();
+                $('#save-btn').show();
+            }
+    
+            
+            function updateTable(data) {
+                var tableHead = '<tr>';
+                var tableBody = '';
+                var headers = Object.keys(data[0]);
+    
+               
+                headers.forEach(function(header) {
+                    tableHead += '<th>' + header + '</th>';
+                });
+                tableHead += '</tr>';
+    
+               
+                data.forEach(function(row) {
+                    tableBody += '<tr>';
+                    headers.forEach(function(header) {
+                        tableBody += '<td>' + row[header] + '</td>';
+                    });
+                    tableBody += '</tr>';
+                });
+    
+                $('#table-view thead').html(tableHead);
+                $('#table-view tbody').html(tableBody);
+                $('#myChart').hide();
+                $('#table-view').show();
+            }
+    
+        
+            $('#run-btn').on('click', function() {
+                updateGraph(combinedData);
+            });
+
+  
+    $('#hide-table-btn').on('click', function() {
+        $('#table-view').toggle();
+        if ($('#table-view').is(':visible')) {
+            $('#hide-table-btn').text('Hide Table');
+        } else {
+            $('#hide-table-btn').text('Show Table');
+        }
+    });
+
+   
+    $('#table-btn').on('click', function() {
+        updateTable(combinedData);
+        $('#save-btn').hide();  
+        $('#hide-table-btn').show(); 
+    });
+
+
+            // Save the graph as an image
+            $('#save-btn').on('click', function() {
+                var imageUrl = chart.toBase64Image();
+                var link = document.createElement('a');
+                link.href = imageUrl;
+                link.download = 'chart.png';
+                link.click();
+            });
+    
+            // Apply operation on the table data
+            $('#apply-operation-btn').on('click', function() {
+                var operation = $('#operation-type').val();
+                var yColumn = $('#y-axis-column').val();
+                var values = combinedData.map(function(row) { return parseFloat(row[yColumn]) || 0; });
+                var result = 0;
+    
+                switch (operation) {
+                    case 'sum':
+                        result = values.reduce((a, b) => a + b, 0);
+                        break;
+                    case 'subtract':
+                        result = values.reduce((a, b) => a - b);
+                        break;
+                    case 'multiply':
+                        result = values.reduce((a, b) => a * b, 1);
+                        break;
+                    case 'divide':
+                        result = values.reduce((a, b) => a / b);
+                        break;
+                    case 'average':
+                        result = values.reduce((a, b) => a + b, 0) / values.length;
+                        break;
+                    case 'min':
+                        result = Math.min(...values);
+                        break;
+                    case 'max':
+                        result = Math.max(...values);
+                        break;
+                }
+    
+                var operationRow = '<tr><td colspan="2">Operation Result (' + operation + '):</td><td>' + result + '</td></tr>';
+                $('#table-view tbody').append(operationRow);
+            });
+        });
+    </script>
+</body>
+</html>
